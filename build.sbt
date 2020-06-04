@@ -9,10 +9,14 @@ lazy val commonSettings = Seq(
   scalaVersion := "2.13.2"
 )
 
-//lazy val flowAlgebra = project.settings(
-//  commonSettings
-//)
-lazy val apps = project.dependsOn(core).settings(
+lazy val tablex = project.settings(
+  commonSettings,
+  libraryDependencies ++= Seq(
+    "org.scala-lang" % "scala-reflect" % scalaVersion.value,
+    "org.scalatest" % "scalatest_2.13" % "3.1.2" % "test"
+  )
+)
+lazy val apps = project.aggregate(core).dependsOn(core).settings(
   commonSettings,
   scalacOptions ++= Seq("-Ymacro-annotations"),
   libraryDependencies ++= Seq(
@@ -21,7 +25,7 @@ lazy val apps = project.dependsOn(core).settings(
     "io.circe" %% "circe-parser"
   ).map(_ % "0.12.3")
 )
-lazy val core = project.dependsOn().settings(
+lazy val core = project.aggregate(tablex).dependsOn(tablex).settings(
   commonSettings,
   scalacOptions ++= Seq("-Ymacro-annotations"),
   libraryDependencies ++= Seq(

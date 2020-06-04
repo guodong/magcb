@@ -137,31 +137,29 @@ object IR {
             val sigma_t = tbs.reduce((t1, t2) => t1.join(t2))
             inst.table_sigma = sigma_t
             if (inst.isUdf) {
-              for (e <- inst.table_sigma.entries) {
+//              for (e <- inst.table_sigma.rows) {
                 // set output attribute to execution result
                 inst match {
                   case x: UdfInstruction1[Any, _] =>
-                    e.data = e.data.updated(x.output, x.f(e.data(x.inputs(0))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name))))))
                   case x: UdfInstruction2[Any, Any, _] =>
-                    e.data = e.data.updated(x.output, x.f(e.data(x.inputs(0)), e.data(x.inputs(1))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name)), r.data(inst.table_sigma.getColumn(x.inputs(1).name))))))
                   case x: UdfInstruction3[Any, Any, Any, _] =>
-                    e.data = e.data.updated(x.output, x.f(e.data(x.inputs(0)), e.data(x.inputs(1)), e.data(x.inputs(2))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name)), r.data(inst.table_sigma.getColumn(x.inputs(1).name)), r.data(inst.table_sigma.getColumn(x.inputs(2).name))))))
                 }
-              }
+//              }
             }
             inst match {
               case x: SysInstruction if x.op == "phi" =>
-                for (e <- inst.table_sigma.entries) {
-                  if (e.data(inst.inputs(0)) == "1") {
-                    e.data = e.data.updated(inst.output, e.data(inst.inputs(1)))
-                  } else {
-                    e.data = e.data.updated(inst.output, e.data(inst.inputs(2)))
-                  }
-                }
+                inst.table_sigma = inst.table_sigma.update(r => if (r.data(inst.table_sigma.getColumn(inst.inputs(0).name)) == true) {
+                  new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), r.data(inst.table_sigma.getColumn(x.inputs(1).name))))
+                } else {
+                  new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), r.data(inst.table_sigma.getColumn(x.inputs(2).name))))
+                })
               case _ => Nil
             }
           }
-          inst.table_sigma.dump()
+          println(inst.table_sigma)
         }
       }
       case Left(cycleNode) => throw new Error(s"Graph contains a cycle at node: ${cycleNode}.")
@@ -176,7 +174,7 @@ object IR {
         println(topOrder)
         for (node <- topOrder.toList.reverse) {
           if (node.toOuter == sink_inst) {
-            node.toOuter.table_psi += (sw -> sink_inst.table_sigma.filter(e => e.data(sink_inst.output) match {
+            node.toOuter.table_psi += (sw -> sink_inst.table_sigma.filter(e => e.data(sink_inst.table_sigma.getColumn(sink_inst.output.name)) match {
               case p: Path => p.isTraverse(sw)
               case _ => false
             }))
@@ -197,23 +195,23 @@ object IR {
 
   def dumpLocalizedTables(sw: String): Unit = {
     println("++++ localized tables +++++")
-    instructions.foreach(inst => inst.table_psi(sw).project(inst.table.attributes).dump())
+    instructions.foreach(inst => println(inst.table_psi(sw).project(inst.table.columns)))
   }
 
-  def getFinalTable(sw: String): Table = {
-    val tp = instructions.last.table_psi(sw).project(Set(getValueByName("ingestion").orNull,
-      getValueByName("pkt.l2.dst").orNull,
-      getValueByName("v5").orNull))
-    // here we change variables to per switch variables. e.g., path -> egress_port
-    tp.update(getValueByName("ingestion").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].ingressOf(sw).orNull)
-    tp.update(getValueByName("v5").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].egressOf(sw) match {
-      case Some(ps) => ps.toList(0)
-      case _ => "drop"
-    })
-    tp.updateAttribute(getValueByName("ingestion").orNull, new Value("standard_metadata.ingress_port"))
-    tp.updateAttribute(getValueByName("v5").orNull, new Value("standard_metadata.egress_spec"))
-    tp
-  }
+//  def getFinalTable(sw: String): Table = {
+//    val tp = instructions.last.table_psi(sw).project(Set(getValueByName("ingestion").orNull,
+//      getValueByName("pkt.l2.dst").orNull,
+//      getValueByName("v5").orNull))
+//    // here we change variables to per switch variables. e.g., path -> egress_port
+//    tp.update(getValueByName("ingestion").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].ingressOf(sw).orNull)
+//    tp.update(getValueByName("v5").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].egressOf(sw) match {
+//      case Some(ps) => ps.toList(0)
+//      case _ => "drop"
+//    })
+//    tp.updateAttribute(getValueByName("ingestion").orNull, new Value("standard_metadata.ingress_port"))
+//    tp.updateAttribute(getValueByName("v5").orNull, new Value("standard_metadata.egress_spec"))
+//    tp
+//  }
 
   def dump(): Unit = {
     instructions.foreach(println(_))
@@ -224,7 +222,7 @@ object IR {
   }
 
   def dumpTables(): Unit = {
-    instructions.foreach(i => i.table.dump())
+    instructions.foreach(i => println(i.table))
   }
 
   def genP4(name: String, table: Table): String = {
@@ -305,7 +303,7 @@ object IR {
         |
         |    table t${table.hashCode() & Int.MaxValue} {
         |        key = {
-        |            ${table.keys.map(a => a.toString + ": exact;").mkString("\n")}
+        |            ${table.columns.map(a => a.toString + ": exact;").mkString("\n")}
         |        }
         |        actions = {
         |            ${table.hashCode() & Int.MaxValue}_action;
@@ -315,7 +313,7 @@ object IR {
         |        size = 1024;
         |        default_action = drop();
         |        const entries = {
-        |        ${table.entries.map(e => s"(${table.keys.map(k => e.data(k)).mkString(", ")}): t${table.hashCode() & Int.MaxValue}_action(${table.attributes.diff(table.keys).map(o => e.data(o)).mkString(", ")});").mkString("\n")}
+        |        ${table.rows.map(e => s"(${table.columns.map(k => e.data(k)).mkString(", ")}): t${table.hashCode() & Int.MaxValue}_action(${table.columns.toSet.diff(table.columns.toSet).map(o => e.data(o)).mkString(", ")});").mkString("\n")}
         |        }
         |
         |    }

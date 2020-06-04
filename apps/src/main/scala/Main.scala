@@ -25,10 +25,9 @@ object Main extends App {
   IR.genDFGInst()
   println(IR.dfg)
   IR.explore()
-  for (i <- 1 to 5) {
-    IR.localize(s"s$i")
-    IR.genP4(s"s$i", IR.getFinalTable(s"s$i"))
-  }
+//  for (i <- 1 to 5) {
+//    IR.localize(s"s$i")
+//    IR.genP4(s"s$i", IR.getFinalTable(s"s$i"))
+//  }
   //  IR.dumpFinalTable("s4")
-
 }

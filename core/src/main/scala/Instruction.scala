@@ -1,5 +1,5 @@
 abstract class Instruction {
-  val table = new Table
+  var table: Table = null
   val inputs: List[Value]
   val output: Value
   val gv: Value
@@ -24,98 +24,86 @@ class SysInstruction(val gv: Value, gs: Boolean, val ctx: Any, val op: String, v
   }
 
   def tabulation(): Unit = {
+    var cols: Set[ColumnLike] = Set.empty
     if (gv != null) {
-      table.attributes += gv
-      table.keys += gv
+      cols += new Column(gv.name, true)
     }
-    table.attributes += output
-    table.attributes ++= inputs
-    table.keys ++= inputs
+    cols += new Column(output.name)
+    inputs.foreach(i => cols += new Column(i.name))
+    var tb = new Table("", cols)
     if (op == "in") {
       ctx match {
         case x: Map[Int, Port] => {
           for ((k, v) <- x) {
-            var entry: Entry = null
+            var row: Row = null
             if (gv != null) {
-              val gvv = if (gs) "1" else "0"
-              entry = new Entry(2, Map(gv -> gvv, inputs(0) -> k, output -> "1"))
+              val gvv = if (gs) true else false
+              tb = tb.insert(2, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> true)).get
             } else {
-              entry = new Entry(2, Map(inputs(0) -> k, output -> "1"))
+              tb = tb.insert(2, Map(inputs(0).name -> k, output.name -> true)).get
             }
-            table.entries += entry
           }
         }
         case x: Set[Port] => {
           for (k <- x) {
-            var entry: Entry = null
+            var row: Row = null
             if (gv != null) {
-              val gvv = if (gs) "1" else "0"
-              entry = new Entry(2, Map(gv -> gvv, inputs(0) -> k, output -> "1"))
+              val gvv = if (gs) true else false
+              tb = tb.insert(2, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> true)).get
             } else {
-              entry = new Entry(2, Map(inputs(0) -> k, output -> "1"))
+              tb = tb.insert(2, Map(inputs(0).name -> k, output.name -> true)).get
             }
-            table.entries += entry
           }
         }
       }
       if (gv != null) {
-        val gvv = if (gs) "1" else "0"
-        val default_entry = new Entry(1, Map(gv -> gvv, inputs(0) -> new Wildcard, output -> "0"))
-        table.entries += default_entry
+        val gvv = if (gs) true else false
+        tb = tb.insert(1, Map(gv.name -> gvv, inputs(0).name -> new Wildcard, output.name -> false)).get
       } else {
-        val default_entry = new Entry(1, Map(inputs(0) -> new Wildcard, output -> "0"))
-        table.entries += default_entry
+        tb = tb.insert(1, Map(inputs(0).name -> new Wildcard, output.name -> false)).get
       }
 
       if (gv != null) {
         // inverse gvv
-        val igvv = if (gs) "0" else "1"
-        var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-        data += inputs(0) -> new Wildcard
-        data = data.filterKeys(table.attributes).toMap
-        val default_entry = new Entry(0, data)
-        table.entries += default_entry
+        val igvv = if (gs) false else true
+        var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+        data += inputs(0).name -> new Wildcard
+        tb = tb.insert(0, data).get
       }
 
     } else if (op == "get") {
       for ((k, v) <- ctx.asInstanceOf[Map[Int, Port]]) {
         if (gv != null) {
-          val gvv = if (gs) "1" else "0"
-          val entry = new Entry(1, Map(gv -> gvv, inputs(0) -> k, output -> v))
-          table.entries += entry
+          val gvv = if (gs) true else false
+          tb = tb.insert(1, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> v)).get
         } else {
-          val entry = new Entry(1, Map(inputs(0) -> k, output -> v))
-          table.entries += entry
+          tb = tb.insert(1, Map(inputs(0).name -> k, output.name -> v)).get
         }
       }
-      if (gv != null) {
-        // inverse gvv
-        val igvv = if (gs) "0" else "1"
-        var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-        data += inputs(0) -> new Wildcard
-        data = data.filterKeys(table.attributes).toMap
-        val default_entry = new Entry(0, data)
-        table.entries += default_entry
-      }
+//      if (gv != null) {
+//        // inverse gvv
+//        val igvv = if (gs) false else true
+//        var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+//        data += inputs(0).name -> new Wildcard
+//        tb = tb.insert(0, data).get
+//      }
     } else if (op == "phi") {
       if (gv != null) {
-        val gvv = if (gs) "1" else "0"
-        val entry = new Entry(1, Map(gv -> gvv, inputs(0) -> new Wildcard, output -> new Wildcard))
-        table.entries += entry
+        val gvv = if (gs) true else false
+        tb = tb.insert(1, Map(gv.name -> gvv, inputs(0).name -> new Wildcard, output.name -> new Wildcard)).get
       } else {
-        val entry = new Entry(1, Map(inputs(0) -> new Wildcard, output -> new Wildcard))
-        table.entries += entry
+        tb = tb.insert(1, Map(inputs(0).name -> new Wildcard, output.name -> new Wildcard)).get
       }
       if (gv != null) {
         // inverse gvv
-        val igvv = if (gs) "0" else "1"
-        var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-        data += inputs(0) -> new Wildcard
-        data = data.filterKeys(table.attributes).toMap
-        val default_entry = new Entry(0, data)
-        table.entries += default_entry
+        val igvv = if (gs) false else true
+        var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+        data += inputs(0).name -> new Wildcard
+//        data = data.filterKeys(tb.columns.toSet).toMap
+        tb = tb.insert(0, data).get
       }
     }
+    table = tb
   }
 }
 
@@ -136,34 +124,32 @@ class UdfInstruction1[iT, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
+    var cols: Set[ColumnLike] = Set.empty
     if (gv != null) {
-      table.attributes += gv
-      table.keys += gv
+      cols += new Column(gv.name, true)
     }
-    table.attributes += output
-    table.attributes ++= inputs
-    table.keys ++= inputs
-    var data: Map[Value, Any] = Map.empty
+    cols += new Column(output.name)
+    inputs.foreach(i => cols += new Column(i.name))
+    var tb = new Table("", cols)
+    var data: Map[String, Any] = Map.empty
     if (gv != null) {
-      val gvv = if (gs) "1" else "0"
-      data += (gv -> gvv)
+      val gvv = if (gs) true else false
+      data += (gv.name -> gvv)
     }
     for (input <- inputs) {
-      data += (input -> new Wildcard)
+      data += (input.name -> new Wildcard)
     }
-    data += (output -> new Wildcard)
-    val entry = new Entry(1, data)
-    table.entries += entry
+    data += (output.name -> new Wildcard)
+    tb = tb.insert(1, data).get
 
     if (gv != null) {
       // inverse gvv
-      val igvv = if (gs) "0" else "1"
-      var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-      inputs.foreach(i => data += i -> new Wildcard)
-      data = data.filterKeys(table.attributes).toMap
-      val default_entry = new Entry(0, data)
-      table.entries += default_entry
+      val igvv = if (gs) false else true
+      var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+      inputs.foreach(i => data += i.name -> new Wildcard)
+      tb = tb.insert(0, data).get
     }
+    table = tb
   }
 }
 
@@ -184,34 +170,33 @@ class UdfInstruction2[iT1, iT2, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
+    var cols: Set[ColumnLike] = Set.empty
     if (gv != null) {
-      table.attributes += gv
-      table.keys += gv
+      cols += new Column(gv.name, true)
     }
-    table.attributes += output
-    table.attributes ++= inputs
-    table.keys ++= inputs
-    var data: Map[Value, Any] = Map.empty
+    cols += new Column(output.name)
+    inputs.foreach(i => cols += new Column(i.name))
+    var tb = new Table("", cols)
+    var data: Map[String, Any] = Map.empty
     if (gv != null) {
-      val gvv = if (gs) "1" else "0"
-      data += (gv -> gvv)
+      val gvv = if (gs) true else false
+      data += (gv.name -> gvv)
     }
     for (input <- inputs) {
-      data += (input -> new Wildcard)
+      data += (input.name -> new Wildcard)
     }
-    data += (output -> new Wildcard)
-    val entry = new Entry(1, data)
-    table.entries += entry
+    data += (output.name -> new Wildcard)
+    tb = tb.insert(1, data).get
 
     if (gv != null) {
       // inverse gvv
-      val igvv = if (gs) "0" else "1"
-      var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-      inputs.foreach(i => data += i -> new Wildcard)
-      data = data.filterKeys(table.attributes).toMap
-      val default_entry = new Entry(0, data)
-      table.entries += default_entry
+      val igvv = if (gs) false else true
+      var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+      inputs.foreach(i => data += i.name -> new Wildcard)
+//      data = data.filterKeys(table.columns.toSet).toMap
+      tb = tb.insert(0, data).get
     }
+    table = tb
   }
 }
 
@@ -232,34 +217,33 @@ class UdfInstruction3[iT1, iT2, iT3, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
+    var cols: Set[ColumnLike] = Set.empty
     if (gv != null) {
-      table.attributes += gv
-      table.keys += gv
+      cols += new Column(gv.name, true)
     }
-    table.attributes += output
-    table.attributes ++= inputs
-    table.keys ++= inputs
-    var data: Map[Value, Any] = Map.empty
+    cols += new Column(output.name)
+    inputs.foreach(i => cols += new Column(i.name))
+    var tb = new Table("", cols)
+    var data: Map[String, Any] = Map.empty
     if (gv != null) {
-      val gvv = if (gs) "1" else "0"
-      data += (gv -> gvv)
+      val gvv = if (gs) true else false
+      data += (gv.name -> gvv)
     }
     for (input <- inputs) {
-      data += (input -> new Wildcard)
+      data += (input.name -> new Wildcard)
     }
-    data += (output -> new Wildcard)
-    val entry = new Entry(1, data)
-    table.entries += entry
+    data += (output.name -> new Wildcard)
+    tb = tb.insert(1, data).get
 
     if (gv != null) {
       // inverse gvv
-      val igvv = if (gs) "0" else "1"
-      var data: Map[Value, Any] = Map(gv -> igvv, output -> new Wildcard)
-      inputs.foreach(i => data += i -> new Wildcard)
-      data = data.filterKeys(table.attributes).toMap
-      val default_entry = new Entry(0, data)
-      table.entries += default_entry
+      val igvv = if (gs) false else true
+      var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+      inputs.foreach(i => data += i.name -> new Wildcard)
+//      data = data.filterKeys(table.columns.toSet).toMap
+      tb = tb.insert(1, data).get
     }
+    table = tb
   }
 }
 
