@@ -8,15 +8,22 @@ import scala.util.{Failure, Success, Try}
  * @param columns the columns of table.
  */
 class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row] = Iterable.empty) {
+  val keys: Iterable[String] = Iterable.empty
 
-//  def getColumn(name: String): ColumnLike = {
-//    columns.find(_.name == name).orNull
-//  }
+  def length(): Int = {
+    rows.size
+  }
 
+  /**
+   * Insert row to table, and returns a new table
+   * @param priority
+   * @param data
+   * @return
+   */
   def insert(priority: Int, data: Map[String, Any]): Try[Table] = {
     var ndata: Map[String, Any] = Map.empty
     for (e <- data) {
-      columns.find(_.name == e._1) match {
+      columns.find(_ == e._1) match {
         case Some(c) => ndata += (c -> e._2)
         case _ => return Failure(new Exception(s"column ${e._1} not found"))
       }
@@ -34,7 +41,7 @@ class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row]
     buildTable(columns, newRows)
   }
 
-  private def buildTable(columns: Iterable[ColumnLike], rows: Iterable[Row]): Table = {
+  private def buildTable(columns: Iterable[String], rows: Iterable[Row]): Table = {
     new Table(name, columns, rows)
   }
 
@@ -45,13 +52,7 @@ class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row]
    * @return a new table of joined result.
    */
   def join(another: Table): Table = {
-    val tmp = columns.toSet ++ another.columns.toSet
-    var rColumns: Set[ColumnLike] = Set.empty
-    for (c <- tmp) {
-      if (!rColumns.exists(_.name == c.name)) {
-        rColumns += c
-      }
-    }
+    val rColumns = columns.toSet ++ another.columns.toSet
     val rRows: mutable.Set[Row] = mutable.Set.empty
     for ((x, y) <- rows.flatMap(x => another.rows.map(y => (x, y)))) {
       val rRow = x.merge(y)
@@ -84,7 +85,7 @@ class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row]
    * @param cols subset of table columns
    * @return a new projected table
    */
-  def project(cols: Iterable[ColumnLike]): Table = {
+  def project(cols: Iterable[String]): Table = {
     val rCols = cols.toSet.intersect(columns.toSet)
     val rRows: mutable.Set[Row] = mutable.Set.empty
     for (r <- rows) {
@@ -94,15 +95,37 @@ class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row]
     buildTable(rCols, rRows)
   }
 
+  /**
+   * Update table rows
+   *
+   * @param f the lambda function takes an original row and returns a new row
+   * @return new table
+   */
   def update(f: Row => Row): Table = {
-    var rows: Set[Row] = Set.empty
-    rows.foreach(r => rows += f(r))
-    buildTable(columns, rows)
+    var rRows: Set[Row] = Set.empty
+    rows.foreach(r => rRows += f(r))
+    buildTable(columns, rRows)
   }
+
+  /**
+   * Update table column name, rows with old column name will be updated also
+   *
+   * @param old
+   * @param name
+   * @return new table
+   */
+  def updateColumn(old: String, name: String): Table = {
+    val rCols = columns.toSet.filter(_ != old) + name
+    var rRows: Set[Row] = Set.empty
+    rows.foreach(r => rRows += new Row(r.priority, r.data.removed(old) + (name -> r.data(old))))
+    buildTable(rCols, rRows)
+  }
+
+  def distinct(): Table = ???
 
   override def toString: String = {
     s"""
-       |pri | ${columns.toSeq.sortBy(_.name).mkString(" | ")}
+       |pri | ${columns.toSeq.sorted.mkString(" | ")}
        |${rows.mkString("\n")}
        |""".stripMargin
   }

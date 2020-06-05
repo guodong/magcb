@@ -1,7 +1,6 @@
 class PathElement(val ingress: Port, var egresses: Set[Port], val fwdIndicator: String = "all")
 
 class Path {
-  var nm: String = "path"
   var elements: Set[PathElement] = Set.empty
 
   def isTraverse(sw: String): Boolean = {

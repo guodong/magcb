@@ -4,7 +4,7 @@ import scala.collection.mutable
 
 class Test extends FlatSpec with Matchers {
   val c1 = new Column("c1")
-  val t = new Table("hah", Set(c1))
+  val t = new Table("hah", Set("c1"))
   val t1 = t.insert(1, Map("c15" -> "ok"))
   println(t1)
   "A Stack" should "pop values in last-in-first-out order" in {

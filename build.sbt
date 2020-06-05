@@ -18,7 +18,7 @@ lazy val tablex = project.settings(
 )
 lazy val apps = project.aggregate(core).dependsOn(core).settings(
   commonSettings,
-  scalacOptions ++= Seq("-Ymacro-annotations"),
+  scalacOptions ++= Seq("-Ymacro-annotations", "-Ymacro-debug-lite"),
   libraryDependencies ++= Seq(
     "io.circe" %% "circe-core",
     "io.circe" %% "circe-generic",
@@ -27,7 +27,7 @@ lazy val apps = project.aggregate(core).dependsOn(core).settings(
 )
 lazy val core = project.aggregate(tablex).dependsOn(tablex).settings(
   commonSettings,
-  scalacOptions ++= Seq("-Ymacro-annotations"),
+  scalacOptions ++= Seq("-Ymacro-annotations", "-Ymacro-debug-lite"),
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-reflect" % scalaVersion.value,
     "org.scala-graph" %% "graph-core" % "1.13.2",

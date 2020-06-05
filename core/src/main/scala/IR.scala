@@ -48,8 +48,8 @@ object IR {
     }
   }
 
-  def phi(cond: String, x: Any, y: Any): Any = {
-    if (cond == "1" || cond == "*")
+  def phi(cond: Any, x: Any, y: Any): Any = {
+    if (cond.toString == "true" || cond == "*")
       x
     else
       y
@@ -120,12 +120,11 @@ object IR {
   }
 
   def explore(): Unit = {
-
     dfg.topologicalSort() match {
-      case Right(topOrder) => {
+      case Right(topOrder) =>
         for (node <- topOrder) {
           val inst = node.toOuter
-          if (node.diPredecessors.size == 0) {
+          if (node.diPredecessors.isEmpty) {
             inst.table_sigma = inst.table
           } else {
             var tbs = new ArrayBuffer[Table]()
@@ -137,31 +136,27 @@ object IR {
             val sigma_t = tbs.reduce((t1, t2) => t1.join(t2))
             inst.table_sigma = sigma_t
             if (inst.isUdf) {
-//              for (e <- inst.table_sigma.rows) {
-                // set output attribute to execution result
                 inst match {
                   case x: UdfInstruction1[Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name))))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name)))))
                   case x: UdfInstruction2[Any, Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name)), r.data(inst.table_sigma.getColumn(x.inputs(1).name))))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name)))))
                   case x: UdfInstruction3[Any, Any, Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), x.f(r.data(inst.table_sigma.getColumn(x.inputs(0).name)), r.data(inst.table_sigma.getColumn(x.inputs(1).name)), r.data(inst.table_sigma.getColumn(x.inputs(2).name))))))
+                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name), r.data(x.inputs(2).name)))))
                 }
-//              }
             }
             inst match {
               case x: SysInstruction if x.op == "phi" =>
-                inst.table_sigma = inst.table_sigma.update(r => if (r.data(inst.table_sigma.getColumn(inst.inputs(0).name)) == true) {
-                  new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), r.data(inst.table_sigma.getColumn(x.inputs(1).name))))
+                inst.table_sigma = inst.table_sigma.update(r => if (r.data(inst.inputs(0).name) == true) {
+                  new Row(r.priority, r.data.updated(x.output.name, r.data(x.inputs(1).name)))
                 } else {
-                  new Row(r.priority, r.data.updated(inst.table_sigma.getColumn(x.output.name), r.data(inst.table_sigma.getColumn(x.inputs(2).name))))
+                  new Row(r.priority, r.data.updated(x.output.name, r.data(x.inputs(2).name)))
                 })
               case _ => Nil
             }
           }
           println(inst.table_sigma)
         }
-      }
       case Left(cycleNode) => throw new Error(s"Graph contains a cycle at node: ${cycleNode}.")
     }
   }
@@ -171,13 +166,13 @@ object IR {
     dfg.topologicalSort() match {
 
       case Right(topOrder) => {
-        println(topOrder)
         for (node <- topOrder.toList.reverse) {
           if (node.toOuter == sink_inst) {
-            node.toOuter.table_psi += (sw -> sink_inst.table_sigma.filter(e => e.data(sink_inst.table_sigma.getColumn(sink_inst.output.name)) match {
+            val filtered_table = sink_inst.table_sigma.filter(e => e.data(sink_inst.output.name) match {
               case p: Path => p.isTraverse(sw)
               case _ => false
-            }))
+            })
+            node.toOuter.table_psi += (sw -> filtered_table)
           } else {
             var tbs = new ArrayBuffer[Table]()
             for (p <- node.diSuccessors) {
@@ -185,7 +180,8 @@ object IR {
             }
             tbs += node.toOuter.table
             val psi_t = tbs.reduce((t1, t2) => t1.join(t2))
-            node.toOuter.table_psi += (sw -> psi_t)
+            val result = rewriteKeys(sw)
+            node.toOuter.table_psi += (sw -> result)
           }
         }
       }
@@ -198,20 +194,23 @@ object IR {
     instructions.foreach(inst => println(inst.table_psi(sw).project(inst.table.columns)))
   }
 
-//  def getFinalTable(sw: String): Table = {
-//    val tp = instructions.last.table_psi(sw).project(Set(getValueByName("ingestion").orNull,
-//      getValueByName("pkt.l2.dst").orNull,
-//      getValueByName("v5").orNull))
-//    // here we change variables to per switch variables. e.g., path -> egress_port
-//    tp.update(getValueByName("ingestion").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].ingressOf(sw).orNull)
-//    tp.update(getValueByName("v5").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].egressOf(sw) match {
-//      case Some(ps) => ps.toList(0)
-//      case _ => "drop"
-//    })
-//    tp.updateAttribute(getValueByName("ingestion").orNull, new Value("standard_metadata.ingress_port"))
-//    tp.updateAttribute(getValueByName("v5").orNull, new Value("standard_metadata.egress_spec"))
-//    tp
-//  }
+  def rewriteKeys(sw: String): Table = {
+    getFinalTable(sw)
+  }
+
+  def getFinalTable(sw: String): Table = {
+    var tp = instructions.last.table_psi(sw).project(Set("ingestion", "pkt.l2.dst", "v5"))
+    // here we change variables to per switch variables. e.g., path -> egress_port
+    tp = tp.update(r => new Row(r.priority, r.data.updated("ingestion", r.data("v5").asInstanceOf[Path].ingressOf(sw).orNull)))
+    //    tp.update(getValueByName("ingestion").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].ingressOf(sw).orNull)
+    var r = tp.update(r => new Row(r.priority, r.data.updated("v5", r.data("v5").asInstanceOf[Path].egressOf(sw) match {
+      case Some(ps) => ps.toList(0)
+      case _ => "drop"
+    })))
+    r = r.updateColumn("ingestion", "standard_metadata.ingress_port")
+    r = r.updateColumn("v5", "standard_metadata.egress_spec")
+    r
+  }
 
   def dump(): Unit = {
     instructions.foreach(println(_))

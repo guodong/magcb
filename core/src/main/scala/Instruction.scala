@@ -24,12 +24,12 @@ class SysInstruction(val gv: Value, gs: Boolean, val ctx: Any, val op: String, v
   }
 
   def tabulation(): Unit = {
-    var cols: Set[ColumnLike] = Set.empty
+    var cols: Set[String] = Set.empty
     if (gv != null) {
-      cols += new Column(gv.name, true)
+      cols += gv.name
     }
-    cols += new Column(output.name)
-    inputs.foreach(i => cols += new Column(i.name))
+    cols += output.name
+    inputs.foreach(i => cols += i.name)
     var tb = new Table("", cols)
     if (op == "in") {
       ctx match {
@@ -80,13 +80,13 @@ class SysInstruction(val gv: Value, gs: Boolean, val ctx: Any, val op: String, v
           tb = tb.insert(1, Map(inputs(0).name -> k, output.name -> v)).get
         }
       }
-//      if (gv != null) {
-//        // inverse gvv
-//        val igvv = if (gs) false else true
-//        var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
-//        data += inputs(0).name -> new Wildcard
-//        tb = tb.insert(0, data).get
-//      }
+      if (gv != null) {
+        // inverse gvv
+        val igvv = if (gs) false else true
+        var data: Map[String, Any] = Map(gv.name -> igvv, output.name -> new Wildcard)
+        data += inputs(0).name -> new Wildcard
+        tb = tb.insert(0, data).get
+      }
     } else if (op == "phi") {
       if (gv != null) {
         val gvv = if (gs) true else false
@@ -124,12 +124,12 @@ class UdfInstruction1[iT, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
-    var cols: Set[ColumnLike] = Set.empty
+    var cols: Set[String] = Set.empty
     if (gv != null) {
-      cols += new Column(gv.name, true)
+      cols += gv.name
     }
-    cols += new Column(output.name)
-    inputs.foreach(i => cols += new Column(i.name))
+    cols += output.name
+    inputs.foreach(i => cols += i.name)
     var tb = new Table("", cols)
     var data: Map[String, Any] = Map.empty
     if (gv != null) {
@@ -170,12 +170,12 @@ class UdfInstruction2[iT1, iT2, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
-    var cols: Set[ColumnLike] = Set.empty
+    var cols: Set[String] = Set.empty
     if (gv != null) {
-      cols += new Column(gv.name, true)
+      cols += gv.name
     }
-    cols += new Column(output.name)
-    inputs.foreach(i => cols += new Column(i.name))
+    cols += output.name
+    inputs.foreach(i => cols += i.name)
     var tb = new Table("", cols)
     var data: Map[String, Any] = Map.empty
     if (gv != null) {
@@ -217,12 +217,12 @@ class UdfInstruction3[iT1, iT2, iT3, oT](val gv: Value, gs: Boolean,
   }
 
   def tabulation(): Unit = {
-    var cols: Set[ColumnLike] = Set.empty
+    var cols: Set[String] = Set.empty
     if (gv != null) {
-      cols += new Column(gv.name, true)
+      cols += gv.name
     }
-    cols += new Column(output.name)
-    inputs.foreach(i => cols += new Column(i.name))
+    cols += output.name
+    inputs.foreach(i => cols += i.name)
     var tb = new Table("", cols)
     var data: Map[String, Any] = Map.empty
     if (gv != null) {

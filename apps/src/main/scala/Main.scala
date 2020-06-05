@@ -7,9 +7,9 @@ object Main extends App {
 
   @Mthread
   def l2_custom(pkt: Packet, ingestion: Port): Path = {
-    //    if (!macTable.contains(pkt.l2.src)) {
-    //      macTable += (pkt.l2.src -> ingestion)
-    //    }
+//    if (!macTable.contains(pkt.l2.src)) {
+//      macTable += (pkt.l2.src -> ingestion)
+//    }
     if (macTable.contains(pkt.l2.dst)) {
       return Topo.shortestPath(ingestion, macTable(pkt.l2.dst))
     } else {
@@ -25,9 +25,10 @@ object Main extends App {
   IR.genDFGInst()
   println(IR.dfg)
   IR.explore()
-//  for (i <- 1 to 5) {
-//    IR.localize(s"s$i")
-//    IR.genP4(s"s$i", IR.getFinalTable(s"s$i"))
-//  }
+  for (i <- 1 to 5) {
+    IR.localize(s"s$i")
+    println(IR.getFinalTable(s"s$i"))
+    IR.genP4(s"s$i", IR.getFinalTable(s"s$i"))
+  }
   //  IR.dumpFinalTable("s4")
 }

@@ -5,7 +5,8 @@ import scalax.collection.edge.LUnDiEdge
 import scalax.collection.mutable.Graph
 
 case class Topo(hosts: Map[String, Set[String]], switches: Map[String, Set[String]], links: List[List[String]]) {
-
+  def shortestPath(src: Any, dst: Any): Path = ???
+  def stp(root: Any): Path = ???
 }
 
 object Topo {
