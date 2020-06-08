@@ -4,7 +4,7 @@ object L2 extends App {
   val topo = Topo.fromJson(Source.fromResource("topo.json").mkString)
   var macTable: Map[Int, Port] = Map.empty
 
-  @Mthread
+//  @Mthread
   def l2_custom(pkt: Packet, ingestion: Port): Path = {
     if (!macTable.contains(pkt.l2.src)) {
       macTable += (pkt.l2.src -> ingestion)

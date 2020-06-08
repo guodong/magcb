@@ -40,7 +40,6 @@ object MthreadImpl {
                 $mods def gen[..$tparams](): Unit = {
                 val pktL2Dst = IR.newValue("pkt.l2.dst")
                 val ingestion = IR.newValue("ingestion")
-                val ret = IR.newValue("ret")
                 IR.newIfInst(IR.newSysInst(eiPorts, "in", List(ingestion)), () => ${transform(expr)}, ()=>())
                }"""
           case If(cond, thenp, elsep) =>

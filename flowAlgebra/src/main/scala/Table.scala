@@ -1,101 +1,152 @@
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable
+import scala.util.{Failure, Success, Try}
 
-class Entry(val priority: Int, var data: Map[Any, Any]) {
+/**
+ * Table class. Handles the immutable storage and access of data in a Row / Column format.
+ *
+ * @param name    the name of table.
+ * @param columns the columns of table.
+ * @param rows    the rows of table.
+ * @param keys    the keys of table.
+ */
+class Table(name: String, val columns: Iterable[String], val rows: Iterable[Row] = Iterable.empty, val keys: Iterable[String] = Iterable.empty) {
 
-  def merge(entry: Entry): Option[Entry] = {
-    var conflict = false
-    val comm_keys = data.keySet.intersect(entry.data.keySet)
-    for (ck <- comm_keys) {
-      if (data(ck) != entry.data(ck) && data(ck) != "*" && entry.data(ck) != "*") {
-        conflict = true
-        // TODO: break
+  def length(): Int = {
+    rows.size
+  }
+
+  def setKeys(keys: Iterable[String]): Table = {
+    buildTable(columns, rows, keys)
+  }
+
+  /**
+   * Insert row to table, and returns a new table
+   *
+   * @param priority
+   * @param data
+   * @return
+   */
+  def insert(priority: Int, data: Map[String, Any]): Try[Table] = {
+    var ndata: Map[String, Any] = Map.empty
+    for (e <- data) {
+      columns.find(_ == e._1) match {
+        case Some(c) => ndata += (c -> e._2)
+        case _ => return Failure(new Exception(s"column ${e._1} not found"))
       }
     }
-    if (!conflict) {
-      val attributes = data.keySet ++ entry.data.keySet
-      var result: Map[Any, Any] = Map.empty
-      for (a <- attributes) {
-        if (data.contains(a) && !entry.data.contains(a)) {
-          result += (a -> data(a))
-        } else if (!data.contains(a) && entry.data.contains(a)) {
-          result += (a -> entry.data(a))
-        } else {
-          if (data(a) == "*") {
-            result += (a -> entry.data(a))
-          } else {
-            result += (a -> data(a))
-          }
-        }
-      }
-      val e = new Entry(entry.priority + priority, result)
-      return Some(e)
-    } else {
-      //      println("confilict")
-      //      println(data)
-      //      println(entry.data)
-    }
-    None
+    val row = new Row(priority, ndata)
+    Success(insert(row))
   }
-}
 
-class Table {
-  var attributes: Set[Any] = Set.empty
-  val entries: ArrayBuffer[Entry] = ArrayBuffer.empty
+  def insert(row: Row): Table = {
+    insert(List(row))
+  }
 
-  def join(tbl: Table): Table = {
-    val result = new Table
-    result.attributes = attributes ++ tbl.attributes
-    for ((x, y) <- entries.flatMap(x => tbl.entries.map(y => (x, y)))) {
-      val e = x.merge(y)
-      if (e.isDefined) {
-        result.entries ++= e
+  def insert(row: Iterable[Row]): Table = {
+    val newRows = rows.toSet ++ row.toSet
+    buildTable(columns, newRows, keys)
+  }
+
+  private def buildTable(columns: Iterable[String], rows: Iterable[Row], keys: Iterable[String] = Iterable.empty): Table = {
+    new Table(name, columns, rows, keys)
+  }
+
+  /**
+   * Join two tables together, and returns a new table.
+   *
+   * @param another another table to be joined.
+   * @return a new table of joined result.
+   */
+  def join(another: Table): Table = {
+    val rColumns = columns ++ another.columns
+    val rKeys = keys ++ another.keys
+    val rRows: mutable.Set[Row] = mutable.Set.empty
+    for ((x, y) <- rows.flatMap(x => another.rows.map(y => (x, y)))) {
+      val rRow = x.merge(y)
+      if (rRow.isDefined) {
+        rRows += rRow.get
       }
     }
-    result
+    buildTable(rColumns, rRows, rKeys)
   }
 
-  // filter entries with a condition function and returns a new table
-  def filter(f: Entry => Boolean): Table = {
-    val table = new Table
-    table.attributes = attributes
-    for (e <- entries) {
-      if (f(e)) {
-        table.entries += e
+  /**
+   * Filter rows of a table.
+   *
+   * @param f a lambda function for filtering $row => bool
+   * @return a new filtered table.
+   */
+  def filter(f: Row => Boolean): Table = {
+    val rRows: mutable.Set[Row] = mutable.Set.empty
+    for (r <- rows) {
+      if (f(r)) {
+        rRows += r
       }
     }
-    table
+    buildTable(columns, rRows, keys)
   }
 
-  def project(cols: Set[Any]): Table = {
-    val table = new Table
-    table.attributes = cols.intersect(attributes)
-    for (e <- entries) {
-      val newe = new Entry(e.priority, e.data.view.filterKeys(p => cols.contains(p)).toMap)
-      table.entries += newe
+  /**
+   * Project columns to a subset
+   *
+   * @param cols subset of table columns
+   * @return a new projected table
+   */
+  def project(cols: Iterable[String]): Table = {
+    val rCols = cols.toSet.intersect(columns.toSet)
+    val rKeys = keys.toSet.intersect(cols.toSet)
+    val rRows: mutable.Set[Row] = mutable.Set.empty
+    for (r <- rows) {
+      val row = r.project(cols)
+      rRows += row
     }
-    table
+    buildTable(rCols, rRows, rKeys)
   }
 
-  def rewrite(): Unit = {
-
+  /**
+   * Update table rows
+   *
+   * @param f the lambda function takes an original row and returns a new row
+   * @return new table
+   */
+  def update(f: Row => Row): Table = {
+    var rRows: Set[Row] = Set.empty
+    rows.foreach(r => rRows += f(r))
+    buildTable(columns, rRows, keys)
   }
 
-  def distinct(): Unit = {
-    var result: Set[Entry] = Set.empty
-    for (e <- entries) {
-
+  /**
+   * Update table column name, rows with old column name will be updated also
+   *
+   * @param old
+   * @param name
+   * @return new table
+   */
+  def updateColumn(old: String, name: String): Table = {
+    val rCols = columns.toSet.filter(_ != old) + name
+    var rKeys = keys
+    if (keys.toSet.contains(old)) {
+      rKeys = keys.toSet.filter(_ != old) + name
     }
+    var rRows: Set[Row] = Set.empty
+    rows.foreach(r => rRows += new Row(r.priority, r.data.removed(old) + (name -> r.data(old))))
+    buildTable(rCols, rRows, rKeys)
   }
 
-  def dump(): Unit = {
-    println(s"pri | ${attributes.mkString(" | ")}")
-    for (entry <- entries) {
-      print(s"${entry.priority}")
-      attributes.foreach(a => print(s" | ${entry.data(a)}"))
-      println()
-      // Note: do not use map function on attributes as bellow, since it's retures a Set that removes duplicated values
-      // println(s"${entry.priority} | ${attributes.map(a => entry.data(a)).mkString(" | ")}")
-    }
-    println()
+  /**
+   * Remove redundant rows in table, the comparision is based on serialized result of each row.
+   *
+   * @return a new table without redundant rows.
+   */
+  def distinct(): Table = {
+    val rRows: Seq[Row] = rows.toSeq.distinctBy(_.toString)
+    buildTable(columns, rRows, keys)
+  }
+
+  override def toString: String = {
+    s"""
+       |pri | ${columns.toSeq.sorted.mkString(" | ")}
+       |${rows.toList.sortBy(_.priority)(Ordering[Int].reverse).map(_.toString).mkString("\n")}
+       |""".stripMargin
   }
 }

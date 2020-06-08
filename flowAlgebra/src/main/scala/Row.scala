@@ -16,6 +16,8 @@ class Row(val priority: Int, val data: Map[String, Any]) {
       for (ck <- comm_keys) {
         if (data(ck).toString != another.data(ck).toString && data(ck).toString != "*" && another.data(ck).toString != "*") {
           conflict = true
+//          println(data(ck))
+//          println(another.data(ck))
           break
         }
       }

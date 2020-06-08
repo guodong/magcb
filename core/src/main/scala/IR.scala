@@ -44,7 +44,7 @@ object IR {
     // TODO: generate phi automatically
     if (guardStack.length == 2) {
       newUdfInst3(phi, List(getValueByName("v1").orNull, getValueByName("v3").orNull, getValueByName("v4").orNull))
-//      newSysInst(Tuple2(getValueByName("v3").orNull, getValueByName("v4").orNull), "phi", List(getValueByName("v1").orNull))
+      //      newSysInst(Tuple2(getValueByName("v3").orNull, getValueByName("v4").orNull), "phi", List(getValueByName("v1").orNull))
     }
   }
 
@@ -136,14 +136,14 @@ object IR {
             val sigma_t = tbs.reduce((t1, t2) => t1.join(t2))
             inst.table_sigma = sigma_t
             if (inst.isUdf) {
-                inst match {
-                  case x: UdfInstruction1[Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name)))))
-                  case x: UdfInstruction2[Any, Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name)))))
-                  case x: UdfInstruction3[Any, Any, Any, _] =>
-                    inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name), r.data(x.inputs(2).name)))))
-                }
+              inst match {
+                case x: UdfInstruction1[Any, _] =>
+                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") {x.f(r.data(x.inputs(0).name))} else new Nul)))
+                case x: UdfInstruction2[Any, Any, _] =>
+                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name)) else new Nul)))
+                case x: UdfInstruction3[Any, Any, Any, _] =>
+                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name), r.data(x.inputs(2).name)) else new Nul)))
+              }
             }
             inst match {
               case x: SysInstruction if x.op == "phi" =>
@@ -155,13 +155,15 @@ object IR {
               case _ => Nil
             }
           }
-          println(inst.table_sigma)
+          val cols = if (inst.gv != null) Seq(inst.gv) ++ inst.inputs ++ Seq(inst.output) else inst.inputs ++ Seq(inst.output)
+          inst.table_sigma = inst.table_sigma
+          println(inst.table_sigma.project(cols.map(_.name)).distinct())
         }
       case Left(cycleNode) => throw new Error(s"Graph contains a cycle at node: ${cycleNode}.")
     }
   }
 
-  def localize(sw: String): Unit = {
+  def project(sw: String): Unit = {
     val sink_inst = instructions.last
     dfg.topologicalSort() match {
 
@@ -181,7 +183,7 @@ object IR {
             tbs += node.toOuter.table
             val psi_t = tbs.reduce((t1, t2) => t1.join(t2))
             val result = rewriteKeys(sw)
-            node.toOuter.table_psi += (sw -> result)
+            node.toOuter.table_psi += (sw -> psi_t)
           }
         }
       }
@@ -189,9 +191,21 @@ object IR {
     }
   }
 
-  def dumpLocalizedTables(sw: String): Unit = {
+  def localize(sw: String): Unit = {
+    for (i <- instructions) {
+      i.table_rho += sw -> i.table_psi(sw).project(i.table.columns).distinct().setKeys(if (i.gv!=null) i.inputs.map(_.name) ++ Seq(i.gv.name) else i.inputs.map(_.name))
+    }
+    var r = instructions.last.table_rho(sw).update(r => new Row(r.priority, r.data.updated("v5", r.data("v5").asInstanceOf[Path].egressOf(sw) match {
+      case Some(ps) => ps.toList(0).toString.split(":")(1)
+      case _ => "drop"
+    })))
+    r = r.updateColumn("v5", "egress_spec")
+    instructions.last.table_rho = instructions.last.table_rho.updated(sw, r)
+  }
+
+  def dumpRhoTables(sw: String): Unit = {
     println("++++ localized tables +++++")
-    instructions.foreach(inst => println(inst.table_psi(sw).project(inst.table.columns)))
+    instructions.foreach(inst => println(inst.table_rho(sw)))
   }
 
   def rewriteKeys(sw: String): Table = {
@@ -224,154 +238,191 @@ object IR {
     instructions.foreach(i => println(i.table))
   }
 
-  def genP4(name: String, table: Table): String = {
+  def genP4(name: String): String = {
+    def genPreTable(): Table ={
+      var t = new Table("pre", Set("ingress_port", "ingestion"), keys = Set("ingress_port"))
+      if (name == "s1") {
+        t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s1:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 2, "ingestion" -> new Port("s2:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 3, "ingestion" -> new Port("s2:1"))).get
+      } else if (name == "s2") {
+        t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s2:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 2, "ingestion" -> new Port("s1:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 3, "ingestion" -> new Port("s1:1"))).get
+      } else if (name == "s3") {
+        t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s3:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 2, "ingestion" -> new Port("s1:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 3, "ingestion" -> new Port("s1:1"))).get
+      } else if (name == "s4") {
+        t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s1:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 2, "ingestion" -> new Port("s2:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 3, "ingestion" -> new Port("s3:1"))).get
+      } else if (name == "s5") {
+        t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s1:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 2, "ingestion" -> new Port("s2:1"))).get
+        t = t.insert(0, Map("ingress_port" -> 3, "ingestion" -> new Port("s3:1"))).get
+      }
+      t
+    }
+    def genP4Table(table: Table, inst: Instruction = null): String = {
+      val outputs = table.columns.toSet.diff(table.keys.toSet).toSeq.sorted
+      s"""
+         |    // ${if (inst != null) inst.toString else ""}
+         |    action t${table.hashCode() & Int.MaxValue}_action(${outputs.map(o => if(o == "egress_spec") s"bit<9> $o" else s"bit<32> $o").mkString(", ")}) {
+         |        ${outputs.map(o => if(o == "egress_spec") s"standard_metadata.egress_spec = $o;" else s"meta.$o = $o;").mkString("\n")}
+         |    }
+         |    table t${table.hashCode() & Int.MaxValue} {
+         |        key = {
+         |            ${table.keys.toSeq.sorted.map(a => if (a=="ingress_port") "standard_metadata.ingress_port: exact;" else if (a.contains(".")) "hdr.ethernet.dstAddr: ternary;" else s"meta.${a}: ternary;").mkString("\n")}
+         |        }
+         |        actions = {
+         |            t${table.hashCode() & Int.MaxValue}_action;
+         |            drop;
+         |            NoAction;
+         |        }
+         |        size = 1024;
+         |        default_action = drop();
+         |        const entries = {
+         |        ${table.rows.toSeq.sortBy(_.priority)(Ordering[Int].reverse).map(e => s"(${table.keys.toSeq.sorted.map(k => Util.toDpValue(e.data(k))).mkString(", ")}): t${table.hashCode() & Int.MaxValue}_action(${table.columns.toSet.diff(table.keys.toSet).toSeq.sorted.map(o => Util.toDpValue(e.data(o))).mkString(", ")});").mkString("\n")}
+         |        }
+         |    }""".stripMargin
+    }
+    def genTables(): String = {
+      instructions.map(i => genP4Table(i.table_rho(name), i)).mkString("\n")
+    }
+    def genApply(): String = {
+      instructions.map(i => s"t${i.table_rho(name).hashCode() & Int.MaxValue}.apply();").mkString("\n")
+    }
+    val pretable = genPreTable()
     val result =
       s"""
-        |#include <core.p4>
-        |#include <v1model.p4>
-        |
-        |const bit<16> TYPE_IPV4 = 0x800;
-        |
-        |/*************************************************************************
-        |*********************** H E A D E R S  ***********************************
-        |*************************************************************************/
-        |
-        |typedef bit<9>  egressSpec_t;
-        |typedef bit<48> macAddr_t;
-        |typedef bit<32> ip4Addr_t;
-        |
-        |header ethernet_t {
-        |    macAddr_t dstAddr;
-        |    macAddr_t srcAddr;
-        |    bit<16>   etherType;
-        |}
-        |
-        |struct metadata {
-        |    /* empty */
-        |}
-        |
-        |struct headers {
-        |    ethernet_t   ethernet;
-        |}
-        |
-        |/*************************************************************************
-        |*********************** P A R S E R  ***********************************
-        |*************************************************************************/
-        |
-        |parser MyParser(packet_in packet,
-        |                out headers hdr,
-        |                inout metadata meta,
-        |                inout standard_metadata_t standard_metadata) {
-        |
-        |    state start {
-        |        transition parse_ethernet;
-        |    }
-        |
-        |    state parse_ethernet {
-        |        packet.extract(hdr.ethernet);
-        |        transition accept;
-        |    }
-        |
-        |}
-        |
-        |/*************************************************************************
-        |************   C H E C K S U M    V E R I F I C A T I O N   *************
-        |*************************************************************************/
-        |
-        |control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
-        |    apply {
-        |
-        |    }
-        |}
-        |
-        |
-        |/*************************************************************************
-        |**************  I N G R E S S   P R O C E S S I N G   *******************
-        |*************************************************************************/
-        |
-        |control MyIngress(inout headers hdr,
-        |                  inout metadata meta,
-        |                  inout standard_metadata_t standard_metadata) {
-        |    action drop() {
-        |        mark_to_drop(standard_metadata);
-        |    }
-        |
-        |    action t${table.hashCode() & Int.MaxValue}_action(egressSpec_t port) {
-        |        standard_metadata.egress_spec = port;
-        |    }
-        |
-        |    table t${table.hashCode() & Int.MaxValue} {
-        |        key = {
-        |            ${table.columns.map(a => a.toString + ": exact;").mkString("\n")}
-        |        }
-        |        actions = {
-        |            ${table.hashCode() & Int.MaxValue}_action;
-        |            drop;
-        |            NoAction;
-        |        }
-        |        size = 1024;
-        |        default_action = drop();
-        |        const entries = {
-        |        ${table.rows.map(e => s"(${table.columns.map(k => e.data(k)).mkString(", ")}): t${table.hashCode() & Int.MaxValue}_action(${table.columns.toSet.diff(table.columns.toSet).map(o => e.data(o)).mkString(", ")});").mkString("\n")}
-        |        }
-        |
-        |    }
-        |
-        |    apply {
-        |            t${table.hashCode() & Int.MaxValue}.apply();
-        |    }
-        |}
-        |
-        |/*************************************************************************
-        |****************  E G R E S S   P R O C E S S I N G   *******************
-        |*************************************************************************/
-        |
-        |control MyEgress(inout headers hdr,
-        |                 inout metadata meta,
-        |                 inout standard_metadata_t standard_metadata) {
-        |    apply {
-        |           /* TBD */
-        |          }
-        |}
-        |
-        |/*************************************************************************
-        |*************   C H E C K S U M    C O M P U T A T I O N   **************
-        |*************************************************************************/
-        |
-        |control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
-        |     apply {
-        |        /* TBD */
-        |    }
-        |}
-        |
-        |/*************************************************************************
-        |***********************  D E P A R S E R  *******************************
-        |*************************************************************************/
-        |
-        |control MyDeparser(packet_out packet, in headers hdr) {
-        |    apply {
-        |        packet.emit(hdr.ethernet);
-        |    }
-        |}
-        |
-        |/*************************************************************************
-        |***********************  S W I T C H  *******************************
-        |*************************************************************************/
-        |
-        |V1Switch(
-        |MyParser(),
-        |MyVerifyChecksum(),
-        |MyIngress(),
-        |MyEgress(),
-        |MyComputeChecksum(),
-        |MyDeparser()
-        |) main;
-        |""".stripMargin
-//    val tpl = Source.fromResource("p4.tpl").mkString
-//    val template = new Template(tpl)
-//    val ctx = Context().withValues("tbl" -> table)
-//    val result = template.render(ctx)
-    val pw = new PrintWriter(new File(s"out/$name.p4" ))
+         |#include <core.p4>
+         |#include <v1model.p4>
+         |
+         |const bit<16> TYPE_IPV4 = 0x800;
+         |
+         |/*************************************************************************
+         |*********************** H E A D E R S  ***********************************
+         |*************************************************************************/
+         |
+         |typedef bit<9>  egressSpec_t;
+         |typedef bit<48> macAddr_t;
+         |typedef bit<32> ip4Addr_t;
+         |
+         |header ethernet_t {
+         |    macAddr_t dstAddr;
+         |    macAddr_t srcAddr;
+         |    bit<16>   etherType;
+         |}
+         |
+         |struct metadata {
+         |    ${values.filter(!_.name.contains(".")).map(v => s"bit<32> ${v.name};").mkString("\n")}
+         |}
+         |
+         |struct headers {
+         |    ethernet_t   ethernet;
+         |}
+         |
+         |/*************************************************************************
+         |*********************** P A R S E R  ***********************************
+         |*************************************************************************/
+         |
+         |parser MyParser(packet_in packet,
+         |                out headers hdr,
+         |                inout metadata meta,
+         |                inout standard_metadata_t standard_metadata) {
+         |
+         |    state start {
+         |        transition parse_ethernet;
+         |    }
+         |
+         |    state parse_ethernet {
+         |        packet.extract(hdr.ethernet);
+         |        transition accept;
+         |    }
+         |
+         |}
+         |
+         |/*************************************************************************
+         |************   C H E C K S U M    V E R I F I C A T I O N   *************
+         |*************************************************************************/
+         |
+         |control MyVerifyChecksum(inout headers hdr, inout metadata meta) {
+         |    apply {
+         |
+         |    }
+         |}
+         |
+         |
+         |/*************************************************************************
+         |**************  I N G R E S S   P R O C E S S I N G   *******************
+         |*************************************************************************/
+         |
+         |control MyIngress(inout headers hdr,
+         |                  inout metadata meta,
+         |                  inout standard_metadata_t standard_metadata) {
+         |    action drop() {
+         |        mark_to_drop(standard_metadata);
+         |    }
+         |    ${genP4Table(pretable)}
+         |    ${genTables()}
+         |
+         |    apply {
+         |    t${pretable.hashCode() & Int.MaxValue}.apply();
+         |    ${genApply()}
+         |    }
+         |}
+         |
+         |/*************************************************************************
+         |****************  E G R E S S   P R O C E S S I N G   *******************
+         |*************************************************************************/
+         |
+         |control MyEgress(inout headers hdr,
+         |                 inout metadata meta,
+         |                 inout standard_metadata_t standard_metadata) {
+         |    apply {
+         |           /* TBD */
+         |          }
+         |}
+         |
+         |/*************************************************************************
+         |*************   C H E C K S U M    C O M P U T A T I O N   **************
+         |*************************************************************************/
+         |
+         |control MyComputeChecksum(inout headers  hdr, inout metadata meta) {
+         |     apply {
+         |
+         |    }
+         |}
+         |
+         |/*************************************************************************
+         |***********************  D E P A R S E R  *******************************
+         |*************************************************************************/
+         |
+         |control MyDeparser(packet_out packet, in headers hdr) {
+         |    apply {
+         |        packet.emit(hdr.ethernet);
+         |    }
+         |}
+         |
+         |/*************************************************************************
+         |***********************  S W I T C H  *******************************
+         |*************************************************************************/
+         |
+         |V1Switch(
+         |MyParser(),
+         |MyVerifyChecksum(),
+         |MyIngress(),
+         |MyEgress(),
+         |MyComputeChecksum(),
+         |MyDeparser()
+         |) main;
+         |""".stripMargin
+    //    val tpl = Source.fromResource("p4.tpl").mkString
+    //    val template = new Template(tpl)
+    //    val ctx = Context().withValues("tbl" -> table)
+    //    val result = template.render(ctx)
+    val pw = new PrintWriter(new File(s"out/$name.p4"))
     pw.write(result)
     pw.close()
     result

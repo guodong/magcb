@@ -1,0 +1,65 @@
+{
+  "hosts": {
+    "h1": {
+      "ip": "10.0.2.1/24",
+      "mac": "00:00:00:00:00:01",
+      "commands": [
+        "route add default gw 10.0.1.10 dev h1-eth1",
+        "arp -i h1-eth1 -s 10.0.1.10 08:00:00:00:01:00"
+      ]
+    },
+    "h2": {
+      "ip": "10.0.2.2/24",
+      "mac": "00:00:00:00:00:02",
+      "commands": [
+        "route add default gw 10.0.2.20 dev h2-eth1",
+        "arp -i h2-eth1 -s 10.0.2.20 08:00:00:00:02:00"
+      ]
+    },
+    "h3": {
+      "ip": "10.0.2.3/24",
+      "mac": "00:00:00:00:00:03",
+      "commands": [
+        "route add default gw 10.0.2.20 dev h3-eth1",
+        "arp -i h3-eth1 -s 10.0.2.20 08:00:00:00:02:00"
+      ]
+    }
+  },
+  "switches": {
+    "s1": {
+      "exe": "simple_switch_grpc",
+      "cpu_port": 128,
+      "p4info": "build/s1.p4.p4info.txt",
+      "pipeline": "build/s1.json"
+    },
+    "s2": {
+      "exe": "simple_switch_grpc",
+      "cpu_port": 128,
+      "p4info": "build/s2.p4.p4info.txt",
+      "pipeline": "build/s2.json"
+    },
+    "s3": {
+      "exe": "simple_switch_grpc",
+      "cpu_port": 128,
+      "p4info": "build/s3.p4.p4info.txt",
+      "pipeline": "build/s3.json"
+    },
+    "s4": {
+      "exe": "simple_switch_grpc",
+      "cpu_port": 128,
+      "p4info": "build/s4.p4.p4info.txt",
+      "pipeline": "build/s4.json"
+    },
+    "s5": {
+      "exe": "simple_switch_grpc",
+      "cpu_port": 128,
+      "p4info": "build/s5.p4.p4info.txt",
+      "pipeline": "build/s5.json"
+    }
+  },
+  "links": [
+    ["h1:1", "s1:1", "10g"], ["s1:2","s5:1", "10g"],["s1:3","s4:1", "10g"],
+    ["h2:1", "s2:1", "10g"], ["s2:2","s4:2", "10g"],["s2:3","s5:2", "10g"],
+    ["h3:1", "s3:1", "10g"], ["s3:2","s4:3", "10g"],["s3:3","s5:3", "10g"]
+  ]
+}

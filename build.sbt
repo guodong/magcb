@@ -9,7 +9,7 @@ lazy val commonSettings = Seq(
   scalaVersion := "2.13.2"
 )
 
-lazy val tablex = project.settings(
+lazy val flowAlgebra = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-reflect" % scalaVersion.value,
@@ -25,7 +25,7 @@ lazy val apps = project.aggregate(core).dependsOn(core).settings(
     "io.circe" %% "circe-parser"
   ).map(_ % "0.12.3")
 )
-lazy val core = project.aggregate(tablex).dependsOn(tablex).settings(
+lazy val core = project.aggregate(flowAlgebra).dependsOn(flowAlgebra).settings(
   commonSettings,
   scalacOptions ++= Seq("-Ymacro-annotations", "-Ymacro-debug-lite"),
   libraryDependencies ++= Seq(
