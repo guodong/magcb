@@ -1,3 +1,4 @@
+import immutable.Table
 import org.scalatest.{FlatSpec, Matchers}
 
 import scala.collection.mutable

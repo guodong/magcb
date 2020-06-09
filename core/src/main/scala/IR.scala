@@ -1,5 +1,6 @@
 import java.io.{File, PrintWriter}
 
+import immutable.{Row, Table}
 import scalax.collection.GraphEdge.DiEdge
 import scalax.collection.GraphPredef._
 import scalax.collection.mutable.Graph
@@ -138,11 +139,16 @@ object IR {
             if (inst.isUdf) {
               inst match {
                 case x: UdfInstruction1[Any, _] =>
-                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") {x.f(r.data(x.inputs(0).name))} else new Nul)))
+                  val trans: Transaction = new Transaction(inst.table_sigma).update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") {
+                    x.f(r.data(x.inputs(0).name))
+                  } else new Nul)))
+                  inst.table_sigma = trans.commit()
                 case x: UdfInstruction2[Any, Any, _] =>
-                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name)) else new Nul)))
+                  val trans: Transaction = new Transaction(inst.table_sigma).update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name)) else new Nul)))
+                  inst.table_sigma = trans.commit()
                 case x: UdfInstruction3[Any, Any, Any, _] =>
-                  inst.table_sigma = inst.table_sigma.update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name), r.data(x.inputs(2).name)) else new Nul)))
+                  val trans: Transaction = new Transaction(inst.table_sigma).update(r => new Row(r.priority, r.data.updated(x.output.name, if (r.data(x.output.name).toString != "nul") x.f(r.data(x.inputs(0).name), r.data(x.inputs(1).name), r.data(x.inputs(2).name)) else new Nul)))
+                  inst.table_sigma = trans.commit()
               }
             }
             inst match {
@@ -163,6 +169,11 @@ object IR {
     }
   }
 
+  /**
+   * project global pipeline to switch $sw
+   *
+   * @param sw target switch to project global pipeline
+   */
   def project(sw: String): Unit = {
     val sink_inst = instructions.last
     dfg.topologicalSort() match {
@@ -182,7 +193,7 @@ object IR {
             }
             tbs += node.toOuter.table
             val psi_t = tbs.reduce((t1, t2) => t1.join(t2))
-            val result = rewriteKeys(sw)
+            //            val result = rewriteKeys(sw)
             node.toOuter.table_psi += (sw -> psi_t)
           }
         }
@@ -191,14 +202,22 @@ object IR {
     }
   }
 
+  /**
+   * rewrite global context variables to local context variables
+   *
+   * @param sw
+   */
   def localize(sw: String): Unit = {
     for (i <- instructions) {
-      i.table_rho += sw -> i.table_psi(sw).project(i.table.columns).distinct().setKeys(if (i.gv!=null) i.inputs.map(_.name) ++ Seq(i.gv.name) else i.inputs.map(_.name))
+      val trans = new Transaction(i.table_psi(sw)).project(i.table.columns).distinct().setKeys(if (i.gv != null) i.inputs.map(_.name) ++ Seq(i.gv.name) else i.inputs.map(_.name))
+      i.table_rho += sw -> trans.commit()
     }
+
     var r = instructions.last.table_rho(sw).update(r => new Row(r.priority, r.data.updated("v5", r.data("v5").asInstanceOf[Path].egressOf(sw) match {
-      case Some(ps) => ps.toList(0).toString.split(":")(1)
+      case Some(ps) => ps.toList.head.toString.split(":")(1)
       case _ => "drop"
     })))
+
     r = r.updateColumn("v5", "egress_spec")
     instructions.last.table_rho = instructions.last.table_rho.updated(sw, r)
   }
@@ -239,7 +258,7 @@ object IR {
   }
 
   def genP4(name: String): String = {
-    def genPreTable(): Table ={
+    def genPreTable(): Table = {
       var t = new Table("pre", Set("ingress_port", "ingestion"), keys = Set("ingress_port"))
       if (name == "s1") {
         t = t.insert(0, Map("ingress_port" -> 1, "ingestion" -> new Port("s1:1"))).get
@@ -264,16 +283,17 @@ object IR {
       }
       t
     }
+
     def genP4Table(table: Table, inst: Instruction = null): String = {
       val outputs = table.columns.toSet.diff(table.keys.toSet).toSeq.sorted
       s"""
          |    // ${if (inst != null) inst.toString else ""}
-         |    action t${table.hashCode() & Int.MaxValue}_action(${outputs.map(o => if(o == "egress_spec") s"bit<9> $o" else s"bit<32> $o").mkString(", ")}) {
-         |        ${outputs.map(o => if(o == "egress_spec") s"standard_metadata.egress_spec = $o;" else s"meta.$o = $o;").mkString("\n")}
+         |    action t${table.hashCode() & Int.MaxValue}_action(${outputs.map(o => if (o == "egress_spec") s"bit<9> $o" else s"bit<32> $o").mkString(", ")}) {
+         |        ${outputs.map(o => if (o == "egress_spec") s"standard_metadata.egress_spec = $o;" else s"meta.$o = $o;").mkString("\n")}
          |    }
          |    table t${table.hashCode() & Int.MaxValue} {
          |        key = {
-         |            ${table.keys.toSeq.sorted.map(a => if (a=="ingress_port") "standard_metadata.ingress_port: exact;" else if (a.contains(".")) "hdr.ethernet.dstAddr: ternary;" else s"meta.${a}: ternary;").mkString("\n")}
+         |            ${table.keys.toSeq.sorted.map(a => if (a == "ingress_port") "standard_metadata.ingress_port: exact;" else if (a.contains(".")) "hdr.ethernet.dstAddr: ternary;" else s"meta.${a}: ternary;").mkString("\n")}
          |        }
          |        actions = {
          |            t${table.hashCode() & Int.MaxValue}_action;
@@ -287,12 +307,15 @@ object IR {
          |        }
          |    }""".stripMargin
     }
+
     def genTables(): String = {
       instructions.map(i => genP4Table(i.table_rho(name), i)).mkString("\n")
     }
+
     def genApply(): String = {
       instructions.map(i => s"t${i.table_rho(name).hashCode() & Int.MaxValue}.apply();").mkString("\n")
     }
+
     val pretable = genPreTable()
     val result =
       s"""

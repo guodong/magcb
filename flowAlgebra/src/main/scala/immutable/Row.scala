@@ -1,3 +1,5 @@
+package immutable
+
 import scala.util.control.Breaks._
 
 class Row(val priority: Int, val data: Map[String, Any]) {

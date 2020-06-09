@@ -1,0 +1,5 @@
+package operations
+
+trait Operation {
+
+}

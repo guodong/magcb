@@ -1,3 +1,5 @@
+import immutable.{Row, Table}
+
 sealed abstract class Instruction {
   var table: Table = null
   val inputs: List[Value]
@@ -52,12 +54,13 @@ class SysInstruction(val gv: Value, gs: Boolean, val ctx: Any, val op: String, v
       ctx match {
         case x: Map[Int, Port] => {
           for ((k, v) <- x) {
-            var row: Row = null
             if (gv != null) {
               val gvv = if (gs) true else false
-              tb = tb.insert(2, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> true)).get
+              tb = new Transaction(tb).insert(2, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> true)).commit()
+//              tb = tb.insert(2, Map(gv.name -> gvv, inputs(0).name -> k, output.name -> true)).get
             } else {
-              tb = tb.insert(2, Map(inputs(0).name -> k, output.name -> true)).get
+              tb = new Transaction(tb).insert(2, Map(inputs(0).name -> k, output.name -> true)).commit()
+//              tb = tb.insert(2, Map(inputs(0).name -> k, output.name -> true)).get
             }
           }
         }

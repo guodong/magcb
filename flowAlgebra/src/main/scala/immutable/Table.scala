@@ -1,3 +1,5 @@
+package immutable
+
 import scala.collection.mutable
 import scala.util.{Failure, Success, Try}
 
