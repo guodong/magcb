@@ -9,6 +9,7 @@ sealed abstract class Instruction {
   var table_sigma: Table = null
   var table_psi: Map[String, Table] = Map.empty
   var table_rho: Map[String, Table] = Map.empty
+  var table_final: Map[String, Table] = Map.empty
   val isUdf: Boolean = true
 }
 

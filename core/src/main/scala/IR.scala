@@ -213,36 +213,19 @@ object IR {
       i.table_rho += sw -> trans.commit()
     }
 
-    var r = instructions.last.table_rho(sw).update(r => new Row(r.priority, r.data.updated("v5", r.data("v5").asInstanceOf[Path].egressOf(sw) match {
+    val last_output_name = instructions.last.output.name
+    var r = instructions.last.table_rho(sw).update(r => new Row(r.priority, r.data.updated(last_output_name, r.data(last_output_name).asInstanceOf[Path].egressOf(sw) match {
       case Some(ps) => ps.toList.head.toString.split(":")(1)
       case _ => "drop"
     })))
 
-    r = r.updateColumn("v5", "egress_spec")
+    r = r.updateColumn(last_output_name, "egress_spec")
     instructions.last.table_rho = instructions.last.table_rho.updated(sw, r)
   }
 
   def dumpRhoTables(sw: String): Unit = {
     println("++++ localized tables +++++")
     instructions.foreach(inst => println(inst.table_rho(sw)))
-  }
-
-  def rewriteKeys(sw: String): Table = {
-    getFinalTable(sw)
-  }
-
-  def getFinalTable(sw: String): Table = {
-    var tp = instructions.last.table_psi(sw).project(Set("ingestion", "pkt.l2.dst", "v5"))
-    // here we change variables to per switch variables. e.g., path -> egress_port
-    tp = tp.update(r => new Row(r.priority, r.data.updated("ingestion", r.data("v5").asInstanceOf[Path].ingressOf(sw).orNull)))
-    //    tp.update(getValueByName("ingestion").orNull, (e) => e.data(getValueByName("v5").orNull).asInstanceOf[Path].ingressOf(sw).orNull)
-    var r = tp.update(r => new Row(r.priority, r.data.updated("v5", r.data("v5").asInstanceOf[Path].egressOf(sw) match {
-      case Some(ps) => ps.toList(0)
-      case _ => "drop"
-    })))
-    r = r.updateColumn("ingestion", "standard_metadata.ingress_port")
-    r = r.updateColumn("v5", "standard_metadata.egress_spec")
-    r
   }
 
   def dump(): Unit = {

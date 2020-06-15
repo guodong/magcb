@@ -8,6 +8,10 @@ class Mthread extends StaticAnnotation {
   def macroTransform(annottees: Any*): Any = macro MthreadImpl.impl
 }
 
+//class MThread extends StaticAnnotation {
+////  def macroTransform(annottees: Any*): Any = null
+//}
+
 
 object MthreadImpl {
 

@@ -13,7 +13,8 @@ lazy val flowAlgebra = project.settings(
   commonSettings,
   libraryDependencies ++= Seq(
     "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-    "org.scalatest" % "scalatest_2.13" % "3.1.2" % "test"
+    "org.scalatest" % "scalatest_2.13" % "3.1.2" % "test",
+    "org.scala-lang.modules" %% "scala-parser-combinators" % "1.1.2"
   )
 )
 lazy val apps = project.aggregate(core).dependsOn(core).settings(

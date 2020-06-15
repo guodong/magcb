@@ -10,12 +10,20 @@ object Main extends App {
 //    if (!macTable.contains(pkt.l2.src)) {
 //      macTable += (pkt.l2.src -> ingestion)
 //    }
+//    pkt.l2.dst = 1  // v1 = 1 for (i <- 0 to 10)
     if (macTable.contains(pkt.l2.dst)) {
       return Topo.shortestPath(ingestion, macTable(pkt.l2.dst))
     } else {
       return Topo.stp(ingestion)
     }
   }
+
+  //
+
+//  x = pkt.l2.dst+1
+//
+//  if (x < 100)
+//    return sssp(ingestion, x), .*NAT(x).*
 
 
   gen()
@@ -25,12 +33,12 @@ object Main extends App {
   IR.genDFGInst()
   println(IR.dfg)
   IR.explore()
+//  IR.localize(topo)
+//  IR.genP4(topo)
   for (i <- 1 to 5) {
     IR.project(s"s$i")
     IR.localize(s"s$i")
-//    println(IR.getFinalTable(s"s$i"))
     IR.genP4(s"s$i")
   }
-  IR.dumpRhoTables("s1")
-//    IR.dumpFinalTable("s4")
+//  IR.dumpRhoTables("s1")
 }

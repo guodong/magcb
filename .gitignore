@@ -4,4 +4,7 @@ project/
 target/
 ignored/
 out/
+outs/
+bin/
 out-snapshot
+*.swp

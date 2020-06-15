@@ -1,14 +1,12 @@
 import scala.io.Source
 
-object L2 extends App {
+object PT extends App {
   val topo = Topo.fromJson(Source.fromResource("topo.json").mkString)
-  var macTable: collection.mutable.Map[Int, Port] = collection.mutable.Map.empty
+  var macTable: Map[Int, Port] =  Map(1 -> Topo.getPortById("s1:1").get, 2 -> Topo.getPortById("s2:1").get, 3 -> Topo.getPortById("s3:1").get)
 
-  //@MThread
+//  @Mthread
   def l2_custom(pkt: Packet, ingestion: Port): Path = {
-    if (!macTable.contains(pkt.l2.src)) {
-      macTable += (pkt.l2.src -> ingestion)
-    }
+    pkt.l2.dst = 3
 
     if (macTable.contains(pkt.l2.dst)) {
       return topo.shortestPath(ingestion, macTable(pkt.l2.dst))
@@ -17,4 +15,3 @@ object L2 extends App {
     }
   }
 }
-
